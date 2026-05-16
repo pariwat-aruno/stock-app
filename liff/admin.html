@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Admin — Stock App</title>
+  <link rel="stylesheet" href="./css/style.css" />
+  <style>
+    .tabs { display:flex; gap:4px; margin-bottom:14px; overflow-x:auto; padding-bottom:4px; }
+    .tab {
+      flex-shrink:0; padding:8px 12px; font-size:13px;
+      border:1px solid var(--border); border-radius:6px;
+      background:white; color:var(--muted); cursor:pointer;
+      font-weight:500; font-family:inherit;
+    }
+    .tab.active { background:var(--cherry); color:white; border-color:var(--cherry); }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; }
+    .item-row {
+      background:white; border:1px solid var(--border); border-radius:8px;
+      padding:12px; margin-bottom:6px;
+    }
+    .item-row-title { font-weight:600; font-size:14px; }
+    .item-row-meta { font-size:12px; color:var(--muted); margin-top:2px; }
+    .row-actions { display:flex; gap:6px; margin-top:8px; }
+    .row-actions button { flex:1; padding:6px 10px; font-size:12px; }
+    .btn-small {
+      padding:4px 10px; font-size:12px; border-radius:4px;
+      border:1px solid var(--border); background:white; cursor:pointer;
+      font-family:inherit;
+    }
+    .btn-small.danger { background:var(--cherry); color:white; border-color:var(--cherry); }
+    .btn-small.success { background:#10b981; color:white; border-color:#10b981; }
+    .empty { padding:30px; text-align:center; color:var(--muted); font-size:13px; }
+    .code-display { font-family:"SF Mono",monospace; font-size:22px; letter-spacing:6px; padding:14px; background:var(--cherry-tint); color:var(--cherry-dark); border-radius:8px; text-align:center; font-weight:700; }
+    .field-inline { display:flex; gap:8px; align-items:flex-end; margin-bottom:14px; }
+    .field-inline > div { flex:1; }
+    .filter-bar { display:flex; gap:8px; margin-bottom:12px; }
+    .filter-bar select { flex:1; margin-bottom:0; }
+    .img-thumbs { display:flex; gap:4px; margin-top:6px; }
+    .img-thumbs img { width:48px; height:48px; object-fit:cover; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <div class="card" style="max-width:700px">
+    <img class="logo" src="./img/logo.jpg" alt="logo" onerror="this.style.display='none'" />
+    <div class="brand" id="brand">STOCK APP</div>
+    <h1>Admin Panel</h1>
+
+    <div id="error" class="error" style="display:none"></div>
+    <div id="loading" style="text-align:center;padding:30px;color:var(--muted)">กำลังโหลด...</div>
+
+    <div id="content" style="display:none">
+      <div class="subtitle" id="welcome"></div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="employees">พนักงาน</button>
+        <button class="tab" data-tab="pending">อนุมัติสาร</button>
+        <button class="tab" data-tab="materials">ตั้งค่าสาร</button>
+        <button class="tab" data-tab="history">ประวัติ</button>
+        <button class="tab" data-tab="settings">ตั้งค่า</button>
+      </div>
+
+      <!-- TAB: พนักงาน -->
+      <div class="tab-content active" id="tab-employees">
+        <h2 style="font-size:16px;margin:8px 0">เพิ่มพนักงานใหม่</h2>
+        <div class="field-inline">
+          <div>
+            <div class="label">ชื่อ</div>
+            <input type="text" id="new-emp-name" placeholder="ชื่อพนักงาน" style="margin-bottom:0" />
+          </div>
+          <div style="flex:0 0 120px">
+            <div class="label">บทบาท</div>
+            <select id="new-emp-role" style="margin-bottom:0">
+              <option value="staff">พนักงาน</option>
+              <option value="owner">เจ้าของ</option>
+            </select>
+          </div>
+        </div>
+        <button id="btn-add-emp" class="btn-primary">+ เพิ่มพนักงาน</button>
+
+        <h2 style="font-size:16px;margin:20px 0 8px">รายชื่อพนักงาน</h2>
+        <div id="emp-list"><div class="empty">กำลังโหลด...</div></div>
+      </div>
+
+      <!-- TAB: อนุมัติสาร -->
+      <div class="tab-content" id="tab-pending">
+        <h2 style="font-size:16px;margin:8px 0">คำขออนุมัติสารใหม่</h2>
+        <div id="pending-list"><div class="empty">กำลังโหลด...</div></div>
+      </div>
+
+      <!-- TAB: ตั้งค่าสาร -->
+      <div class="tab-content" id="tab-materials">
+        <h2 style="font-size:16px;margin:8px 0">รายการสาร</h2>
+        <div id="materials-list"><div class="empty">กำลังโหลด...</div></div>
+      </div>
+
+      <!-- TAB: ประวัติ -->
+      <div class="tab-content" id="tab-history">
+        <h2 style="font-size:16px;margin:8px 0">ประวัติการเคลื่อนไหว</h2>
+        <div class="filter-bar">
+          <select id="hist-type">
+            <option value="">ทุกประเภท</option>
+            <option value="in">รับเข้า</option>
+            <option value="out">เบิกออก</option>
+          </select>
+          <button class="btn-small" id="hist-refresh">รีเฟรช</button>
+        </div>
+        <div id="history-list"><div class="empty">กำลังโหลด...</div></div>
+      </div>
+
+      <!-- TAB: ตั้งค่า -->
+      <div class="tab-content" id="tab-settings">
+        <h2 style="font-size:16px;margin:8px 0">ตั้งค่าระบบ</h2>
+        <div class="item-row">
+          <strong>การตั้งค่าระบบ</strong>
+          <div class="item-row-meta">
+            ค่า config เช่น <code>owner_line_user_ids</code>, <code>alert_hour</code>, <code>expire_warning_days</code> สามารถแก้ผ่าน Google Sheet ตาราง <strong>Config</strong> ได้โดยตรง
+          </div>
+          <div class="item-row-meta" style="margin-top:8px">
+            หลังแก้: รัน <code>clearConfigCache()</code> ใน Apps Script editor (cache 5 นาที)
+          </div>
+        </div>
+        <div class="item-row" style="margin-top:8px">
+          <strong>Daily Alert Trigger</strong>
+          <div class="item-row-meta">
+            ตั้งให้รัน <code>setupAlertTrigger()</code> ใน Apps Script editor 1 ครั้ง — แล้วระบบจะ alert ใกล้หมด + ใกล้หมดอายุทุกวัน 08:00 อัตโนมัติ
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer" id="footer">Stock App</div>
+
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script type="module">
+    import { CONFIG } from './js/config.js';
+    import { api } from './js/api.js';
+    import { initAuth, state } from './js/auth.js';
+    import { showError, clearError } from './js/utils.js';
+
+    const els = {
+      brand: document.getElementById('brand'),
+      footer: document.getElementById('footer'),
+      err: document.getElementById('error'),
+      loading: document.getElementById('loading'),
+      content: document.getElementById('content'),
+      welcome: document.getElementById('welcome'),
+    };
+
+    if (CONFIG.BRAND_NAME) {
+      els.brand.textContent = CONFIG.BRAND_NAME;
+      els.footer.textContent = CONFIG.BRAND_NAME;
+    }
+
+    function formatDate(s) {
+      if (!s) return '-';
+      try {
+        const d = new Date(s);
+        return d.toLocaleString('th-TH', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+      } catch (e) { return String(s); }
+    }
+
+    // === Tabs ===
+    document.querySelectorAll('.tab').forEach(t => {
+      t.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+        const tab = t.getAttribute('data-tab');
+        document.getElementById('tab-' + tab).classList.add('active');
+        loadTab(tab);
+      });
+    });
+
+    // === Init + isOwner check ===
+    async function init() {
+      try {
+        await initAuth(CONFIG.LIFF_ID_ADMIN);
+        const me = await api.post('getMe', { lineUserId: state.lineUserId });
+        if (!me.paired) {
+          els.loading.style.display = 'none';
+          showError(els.err, 'ยังไม่ได้จับคู่ระบบ — เปิดเมนู "เริ่มใช้งาน" ก่อน');
+          return;
+        }
+        if (!me.is_owner) {
+          els.loading.style.display = 'none';
+          showError(els.err, 'คุณไม่มีสิทธิ์เข้าถึงหน้านี้ — สำหรับเจ้าของเท่านั้น');
+          return;
+        }
+
+        els.welcome.textContent = `ยินดีต้อนรับ ${me.name} (เจ้าของ)`;
+        els.loading.style.display = 'none';
+        els.content.style.display = 'block';
+
+        // load default tab
+        loadTab('employees');
+      } catch (err) {
+        els.loading.style.display = 'none';
+        showError(els.err, 'Error: ' + (err.message || err));
+      }
+    }
+
+    const loadedTabs = new Set();
+    async function loadTab(tab) {
+      // re-load tabs ที่อาจมีการเปลี่ยนแปลง
+      if (tab === 'employees') await loadEmployees();
+      else if (tab === 'pending') await loadPending();
+      else if (tab === 'materials') await loadMaterials();
+      else if (tab === 'history') await loadHistory();
+    }
+
+    // ========== Tab: Employees ==========
+    async function loadEmployees() {
+      const wrap = document.getElementById('emp-list');
+      wrap.innerHTML = '<div class="empty">กำลังโหลด...</div>';
+      try {
+        const r = await api.post('listEmployees', { lineUserId: state.lineUserId });
+        const list = r.employees || [];
+        if (!list.length) {
+          wrap.innerHTML = '<div class="empty">ยังไม่มีพนักงาน</div>';
+          return;
+        }
+        wrap.innerHTML = list.map(e => {
+          const roleLabel = e.role === 'owner' ? 'เจ้าของ' : 'พนักงาน';
+          const pairedLabel = e.is_paired ? '<span style="color:#10b981">✓ จับคู่แล้ว</span>' : '<span style="color:var(--cherry)">รอจับคู่</span>';
+          return `
+            <div class="item-row">
+              <div class="item-row-title">${e.name} <span style="color:var(--muted);font-weight:400">(${e.emp_code} · ${roleLabel})</span></div>
+              <div class="item-row-meta">${pairedLabel} · เพิ่มเมื่อ ${formatDate(e.created_at)}</div>
+              ${e.is_active && !e.is_paired ? `<div class="row-actions"><button class="btn-small danger" data-issue="${e.emp_code}">สร้างรหัสจับคู่</button></div>` : ''}
+            </div>
+          `;
+        }).join('');
+
+        wrap.querySelectorAll('[data-issue]').forEach(btn => {
+          btn.addEventListener('click', () => issueCode(btn.getAttribute('data-issue')));
+        });
+      } catch (err) {
+        wrap.innerHTML = '<div class="error" style="display:block">' + (err.message||err) + '</div>';
+      }
+    }
+
+    document.getElementById('btn-add-emp').addEventListener('click', async () => {
+      const name = document.getElementById('new-emp-name').value.trim();
+      const role = document.getElementById('new-emp-role').value;
+      if (!name) { alert('กรุณาใส่ชื่อ'); return; }
+
+      try {
+        const r = await api.post('addEmployee', { lineUserId: state.lineUserId, name, role });
+        alert(`เพิ่มเรียบร้อย: ${r.emp_code}`);
+        document.getElementById('new-emp-name').value = '';
+        loadEmployees();
+      } catch (err) {
+        alert('Error: ' + (err.message || err));
+      }
+    });
+
+    async function issueCode(empCode) {
+      try {
+        const r = await api.post('issuePairingCode', { lineUserId: state.lineUserId, emp_code: empCode });
+        alert(`รหัสจับคู่สำหรับ ${r.emp_name}:\n\n${r.code}\n\nหมดอายุใน ${r.expires_in_hours} ชม.\nส่งให้พนักงานทาง LINE`);
+        loadEmployees();
+      } catch (err) {
+        alert('Error: ' + (err.message || err));
+      }
+    }
+
+    // ========== Tab: Pending ==========
+    async function loadPending() {
+      const wrap = document.getElementById('pending-list');
+      wrap.innerHTML = '<div class="empty">กำลังโหลด...</div>';
+      try {
+        const r = await api.post('listPending', { lineUserId: state.lineUserId });
+        const list = r.pending || [];
+        if (!list.length) {
+          wrap.innerHTML = '<div class="empty">ไม่มีคำขออนุมัติ</div>';
+          return;
+        }
+        wrap.innerHTML = list.map(p => {
+          const d = p.payload || {};
+          return `
+            <div class="item-row">
+              <div class="item-row-title">${d.name} (${d.unit})</div>
+              <div class="item-row-meta">
+                เสนอโดย: ${p.proposer_name} · ${formatDate(p.proposed_at)}<br/>
+                ขั้นต่ำ: ${d.min_stock || '-'} · หมายเหตุ: ${d.note || '-'}
+              </div>
+              <div class="row-actions">
+                <button class="btn-small success" data-approve="${p.pending_id}">อนุมัติ</button>
+                <button class="btn-small" data-reject="${p.pending_id}">ปฏิเสธ</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        wrap.querySelectorAll('[data-approve]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('อนุมัติคำขอนี้?')) return;
+            try {
+              await api.post('approveMaterial', { lineUserId: state.lineUserId, pending_id: btn.getAttribute('data-approve') });
+              loadPending();
+            } catch (e) { alert('Error: ' + (e.message || e)); }
+          });
+        });
+
+        wrap.querySelectorAll('[data-reject]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const note = prompt('เหตุผลที่ไม่อนุมัติ (optional):');
+            if (note === null) return;
+            try {
+              await api.post('rejectMaterial', { lineUserId: state.lineUserId, pending_id: btn.getAttribute('data-reject'), note });
+              loadPending();
+            } catch (e) { alert('Error: ' + (e.message || e)); }
+          });
+        });
+      } catch (err) {
+        wrap.innerHTML = '<div class="error" style="display:block">' + (err.message||err) + '</div>';
+      }
+    }
+
+    // ========== Tab: Materials ==========
+    async function loadMaterials() {
+      const wrap = document.getElementById('materials-list');
+      wrap.innerHTML = '<div class="empty">กำลังโหลด...</div>';
+      try {
+        const r = await api.post('listMaterials', { lineUserId: state.lineUserId, include_inactive: true });
+        const list = r.materials || [];
+        if (!list.length) {
+          wrap.innerHTML = '<div class="empty">ยังไม่มีสารในระบบ</div>';
+          return;
+        }
+        wrap.innerHTML = list.map(m => {
+          const inactiveStyle = m.is_active ? '' : 'opacity:0.5';
+          const inactiveTag = m.is_active ? '' : '<span style="color:var(--cherry);font-size:11px">(ระงับใช้งาน)</span>';
+          return `
+            <div class="item-row" style="${inactiveStyle}">
+              <div class="item-row-title">${m.name} (${m.unit}) ${inactiveTag}</div>
+              <div class="item-row-meta">${m.material_id} · ขั้นต่ำ ${m.min_stock || 0} ${m.unit}</div>
+              <div class="row-actions">
+                <button class="btn-small" data-min="${m.material_id}" data-current="${m.min_stock}">แก้ขั้นต่ำ</button>
+                ${m.is_active ? `<button class="btn-small danger" data-delete="${m.material_id}">ระงับ</button>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        wrap.querySelectorAll('[data-min]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const cur = btn.getAttribute('data-current');
+            const v = prompt('ขั้นต่ำสำหรับ alert (0 = ไม่ตั้ง):', cur);
+            if (v === null) return;
+            const n = parseFloat(v);
+            if (isNaN(n) || n < 0) { alert('จำนวนไม่ถูกต้อง'); return; }
+            try {
+              await api.post('updateMinStock', { lineUserId: state.lineUserId, material_id: btn.getAttribute('data-min'), min_stock: n });
+              loadMaterials();
+            } catch (e) { alert('Error: ' + (e.message || e)); }
+          });
+        });
+
+        wrap.querySelectorAll('[data-delete]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('ระงับสารนี้? (จะไม่แสดงในเมนู แต่ประวัติยังอยู่)')) return;
+            try {
+              await api.post('softDeleteMaterial', { lineUserId: state.lineUserId, material_id: btn.getAttribute('data-delete') });
+              loadMaterials();
+            } catch (e) {
+              const msg = e.code === 'still_has_stock' ? 'ยังมี lot คงเหลือ — ไม่สามารถระงับได้' : (e.message || e);
+              alert('Error: ' + msg);
+            }
+          });
+        });
+      } catch (err) {
+        wrap.innerHTML = '<div class="error" style="display:block">' + (err.message||err) + '</div>';
+      }
+    }
+
+    // ========== Tab: History ==========
+    async function loadHistory() {
+      const wrap = document.getElementById('history-list');
+      const type = document.getElementById('hist-type').value;
+      wrap.innerHTML = '<div class="empty">กำลังโหลด...</div>';
+      try {
+        const r = await api.post('listMovements', {
+          lineUserId: state.lineUserId,
+          type: type || null,
+          limit: 50,
+        });
+        const list = r.movements || [];
+        if (!list.length) {
+          wrap.innerHTML = '<div class="empty">ไม่พบรายการ</div>';
+          return;
+        }
+        wrap.innerHTML = list.map(m => {
+          const typeBadge = m.type === 'in'
+            ? '<span class="badge" style="background:#d1fae5;color:#065f46;display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">รับเข้า</span>'
+            : '<span class="badge" style="background:#fee2e2;color:#991b1b;display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">เบิกออก</span>';
+          const imgs = [m.image_url_1, m.image_url_2, m.image_url_3].filter(Boolean);
+          return `
+            <div class="item-row">
+              <div class="item-row-title">${typeBadge} ${m.material_name} — ${m.qty}</div>
+              <div class="item-row-meta">
+                ${m.movement_id} · โดย: ${m.actor_name} · ${formatDate(m.created_at)}
+                ${m.for_user_note ? '<br/>สำหรับ: ' + m.for_user_note : ''}
+              </div>
+              ${imgs.length ? '<div class="img-thumbs">' + imgs.map(u => `<a href="${u}" target="_blank"><img src="${u}" alt=""/></a>`).join('') + '</div>' : ''}
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        wrap.innerHTML = '<div class="error" style="display:block">' + (err.message||err) + '</div>';
+      }
+    }
+
+    document.getElementById('hist-type').addEventListener('change', loadHistory);
+    document.getElementById('hist-refresh').addEventListener('click', loadHistory);
+
+    init();
+  </script>
+</body>
+</html>

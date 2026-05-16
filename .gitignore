@@ -1,0 +1,19 @@
+.DS_Store
+node_modules/
+.env
+.env.local
+*.log
+.vscode/
+.idea/
+
+# Apps Script local
+apps-script/.clasp.json
+apps-script/.clasprc.json
+
+# Secrets — ห้าม commit
+*-credentials.json
+*-key.json
+secrets.json
+
+# Generated
+rich-menu.png

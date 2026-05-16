@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>เริ่มใช้งาน — Stock App</title>
+  <link rel="stylesheet" href="./css/style.css" />
+  <style>
+    .code-input {
+      font-size: 28px;
+      letter-spacing: 12px;
+      text-align: center;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      padding: 16px;
+    }
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+    .step-num {
+      flex-shrink: 0;
+      width: 22px; height: 22px;
+      background: var(--cherry);
+      color: white;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: 12px;
+    }
+    .paired-info {
+      background: var(--cherry-tint);
+      border: 1px solid var(--cherry);
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 14px;
+    }
+    .paired-info strong { color: var(--cherry); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="./img/logo.jpg" alt="logo" onerror="this.style.display='none'" />
+    <div class="brand" id="brand">STOCK APP</div>
+
+    <!-- View: loading -->
+    <div id="view-loading">
+      <h1>กำลังเช็คสิทธิ์...</h1>
+      <div class="subtitle">โปรดรอสักครู่</div>
+    </div>
+
+    <!-- View: already paired -->
+    <div id="view-paired" style="display:none">
+      <h1>เข้าสู่ระบบแล้ว</h1>
+      <div class="paired-info">
+        <div>ยินดีต้อนรับ <strong id="paired-name"></strong></div>
+        <div style="font-size:13px;color:var(--muted);margin-top:4px">
+          สิทธิ์: <span id="paired-role"></span>
+        </div>
+      </div>
+      <button class="btn-primary" onclick="liff.closeWindow()">ปิดหน้านี้</button>
+      <div class="note">
+        ใช้เมนูด้านล่างใน LINE เพื่อเปิดฟีเจอร์อื่น
+      </div>
+    </div>
+
+    <!-- View: not paired -->
+    <div id="view-unpaired" style="display:none">
+      <h1>เริ่มใช้งาน</h1>
+      <div class="subtitle">ส่ง User ID ให้เจ้าของ → รับรหัส 6 หลักมาใส่</div>
+
+      <div class="step"><div class="step-num">1</div><div>คัดลอก User ID ส่งให้เจ้าของทาง LINE</div></div>
+      <div class="step"><div class="step-num">2</div><div>รอเจ้าของส่ง "รหัสจับคู่" 6 หลักมาให้</div></div>
+      <div class="step"><div class="step-num">3</div><div>ใส่รหัสด้านล่าง</div></div>
+
+      <div class="label" style="margin-top:18px">User ID ของคุณ</div>
+      <div id="userid" class="userid-box loading">กำลังโหลด...</div>
+      <button id="btn-copy" class="btn-secondary" style="margin-bottom:24px" disabled>คัดลอก User ID</button>
+
+      <div class="label">ใส่รหัสจับคู่ 6 หลัก</div>
+      <input id="code" class="code-input" type="tel" inputmode="numeric" maxlength="6" pattern="\d{6}" placeholder="------" autocomplete="off" />
+
+      <div id="error" class="error" style="display:none"></div>
+
+      <button id="btn-redeem" class="btn-primary" disabled>ยืนยัน</button>
+    </div>
+  </div>
+
+  <div class="page-footer" id="footer">Stock App</div>
+
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script type="module">
+    import { CONFIG } from './js/config.js';
+    import { api } from './js/api.js';
+    import { initAuth, state } from './js/auth.js';
+    import { showError, clearError } from './js/utils.js';
+
+    const viewLoading = document.getElementById('view-loading');
+    const viewPaired  = document.getElementById('view-paired');
+    const viewUnpaired = document.getElementById('view-unpaired');
+    const useridEl = document.getElementById('userid');
+    const btnCopy  = document.getElementById('btn-copy');
+    const btnRedeem= document.getElementById('btn-redeem');
+    const codeEl   = document.getElementById('code');
+    const errEl    = document.getElementById('error');
+    const pairedName = document.getElementById('paired-name');
+    const pairedRole = document.getElementById('paired-role');
+    const brandEl  = document.getElementById('brand');
+    const footerEl = document.getElementById('footer');
+
+    if (CONFIG.BRAND_NAME) {
+      brandEl.textContent = CONFIG.BRAND_NAME;
+      footerEl.textContent = CONFIG.BRAND_NAME;
+    }
+
+    function show(view) {
+      viewLoading.style.display  = view === 'loading'  ? 'block' : 'none';
+      viewPaired.style.display   = view === 'paired'   ? 'block' : 'none';
+      viewUnpaired.style.display = view === 'unpaired' ? 'block' : 'none';
+    }
+
+    async function init() {
+      try {
+        await initAuth(CONFIG.LIFF_ID_PAIR);
+
+        // call getMe
+        const r = await api.post('getMe', { lineUserId: state.lineUserId });
+        if (r.paired) {
+          pairedName.textContent = r.name || '(ไม่มีชื่อ)';
+          pairedRole.textContent = r.role === 'owner' ? 'เจ้าของ' : 'พนักงานคลัง';
+          show('paired');
+        } else {
+          useridEl.textContent = state.lineUserId;
+          useridEl.classList.remove('loading');
+          btnCopy.disabled = false;
+          show('unpaired');
+        }
+      } catch (err) {
+        viewLoading.innerHTML = '<h1 style="color:var(--cherry)">เกิดข้อผิดพลาด</h1><div class="error" style="display:block">' + (err.message || err) + '</div>';
+      }
+    }
+
+    btnCopy.addEventListener('click', async () => {
+      const uid = useridEl.textContent;
+      if (!uid) return;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(uid);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = uid; document.body.appendChild(ta);
+          ta.select(); document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        btnCopy.textContent = 'คัดลอกแล้ว';
+        setTimeout(() => { btnCopy.textContent = 'คัดลอก User ID'; }, 2000);
+      } catch (e) {
+        showError(errEl, 'คัดลอกไม่สำเร็จ — กดค้างที่ User ID เพื่อ copy เอง');
+      }
+    });
+
+    codeEl.addEventListener('input', () => {
+      const v = codeEl.value.replace(/\D/g, '').slice(0, 6);
+      codeEl.value = v;
+      btnRedeem.disabled = v.length !== 6;
+      clearError(errEl);
+    });
+
+    btnRedeem.addEventListener('click', async () => {
+      const code = codeEl.value.trim();
+      if (code.length !== 6) return;
+
+      btnRedeem.disabled = true;
+      btnRedeem.textContent = 'กำลังตรวจสอบ...';
+      clearError(errEl);
+
+      try {
+        const r = await api.post('redeemPairing', {
+          lineUserId: state.lineUserId,
+          code: code,
+        });
+        // success
+        pairedName.textContent = r.name || '(ไม่มีชื่อ)';
+        pairedRole.textContent = r.role === 'owner' ? 'เจ้าของ' : 'พนักงานคลัง';
+        show('paired');
+      } catch (err) {
+        const errMsg = {
+          'invalid_code': 'รหัสไม่ถูกต้อง',
+          'invalid_code_format': 'รหัสต้องเป็นตัวเลข 6 หลัก',
+          'code_expired': 'รหัสนี้หมดอายุแล้ว — ขอจากเจ้าของใหม่',
+          'too_many_attempts': 'ใส่รหัสผิดเกินกำหนด — รหัสนี้ถูกระงับ ขอใหม่จากเจ้าของ',
+          'already_paired': 'บัญชีนี้จับคู่กับพนักงานคนอื่นไว้แล้ว',
+        }[err.code] || ('เกิดข้อผิดพลาด: ' + (err.message || err));
+        showError(errEl, errMsg);
+        btnRedeem.disabled = false;
+        btnRedeem.textContent = 'ยืนยัน';
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

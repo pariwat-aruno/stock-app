@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>สต๊อกคงเหลือ — Stock App</title>
+  <link rel="stylesheet" href="./css/style.css" />
+  <style>
+    .search-box { width:100%; padding:12px; margin-bottom:14px; border:1px solid var(--border); border-radius:8px; font-size:15px; }
+    .material-item {
+      background:white; border:1px solid var(--border); border-radius:8px;
+      padding:14px; margin-bottom:8px; cursor:pointer;
+    }
+    .material-item.low { border-left:4px solid var(--warning); }
+    .material-item.exp { border-left:4px solid var(--cherry); }
+    .material-item-header { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .material-name { font-weight:600; font-size:15px; }
+    .material-qty { font-weight:700; font-size:16px; color:var(--cherry); }
+    .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600; margin-left:6px; }
+    .badge-low { background:#fef3c7; color:#92400e; }
+    .badge-exp { background:#fee2e2; color:#991b1b; }
+    .material-meta { font-size:12px; color:var(--muted); margin-top:4px; }
+    .lots-detail { margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:none; }
+    .lots-detail.open { display:block; }
+    .lot-row { font-size:13px; padding:6px 0; border-bottom:1px solid #f3f4f6; }
+    .lot-row:last-child { border-bottom:none; }
+    .empty { padding:30px; text-align:center; color:var(--muted); }
+    .summary { background:var(--cherry-tint); padding:10px 14px; border-radius:6px; font-size:13px; margin-bottom:14px; color:var(--cherry-dark); }
+  </style>
+</head>
+<body>
+  <div class="card" style="max-width:600px">
+    <img class="logo" src="./img/logo.jpg" alt="logo" onerror="this.style.display='none'" />
+    <div class="brand" id="brand">STOCK APP</div>
+    <h1>สต๊อกคงเหลือ</h1>
+    <div class="subtitle">รายการสารวัตถุดิบในคลัง</div>
+
+    <div id="error" class="error" style="display:none"></div>
+
+    <div id="summary" class="summary" style="display:none"></div>
+
+    <input type="text" class="search-box" id="search" placeholder="ค้นหาชื่อสาร..." />
+
+    <div id="list">
+      <div class="empty">กำลังโหลด...</div>
+    </div>
+  </div>
+
+  <div class="page-footer" id="footer">Stock App</div>
+
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script type="module">
+    import { CONFIG } from './js/config.js';
+    import { api } from './js/api.js';
+    import { initAuth, state } from './js/auth.js';
+    import { showError } from './js/utils.js';
+
+    const els = {
+      brand: document.getElementById('brand'),
+      footer: document.getElementById('footer'),
+      err: document.getElementById('error'),
+      search: document.getElementById('search'),
+      list: document.getElementById('list'),
+      summary: document.getElementById('summary'),
+    };
+
+    if (CONFIG.BRAND_NAME) {
+      els.brand.textContent = CONFIG.BRAND_NAME;
+      els.footer.textContent = CONFIG.BRAND_NAME;
+    }
+
+    let materials = [];
+    const lotsCache = {};
+
+    function formatDate(s) {
+      if (!s) return '-';
+      try {
+        const d = new Date(s);
+        return d.toLocaleDateString('th-TH', { day:'2-digit', month:'2-digit', year:'numeric' });
+      } catch (e) { return String(s); }
+    }
+
+    function renderList() {
+      const q = els.search.value.trim().toLowerCase();
+      const filtered = q ? materials.filter(m => m.name.toLowerCase().includes(q)) : materials;
+
+      if (!filtered.length) {
+        els.list.innerHTML = '<div class="empty">ไม่พบสาร</div>';
+        return;
+      }
+
+      els.list.innerHTML = filtered.map(m => {
+        const cls = m.has_expiring ? 'exp' : (m.is_low ? 'low' : '');
+        const badges = [
+          m.has_expiring ? '<span class="badge badge-exp">ใกล้หมดอายุ</span>' : '',
+          m.is_low ? '<span class="badge badge-low">ใกล้หมด</span>' : '',
+        ].join('');
+        const minStockMsg = m.min_stock > 0 ? `· ขั้นต่ำ ${m.min_stock} ${m.unit}` : '';
+        return `
+          <div class="material-item ${cls}" data-id="${m.material_id}">
+            <div class="material-item-header">
+              <div>
+                <div class="material-name">${m.name} ${badges}</div>
+                <div class="material-meta">${minStockMsg}</div>
+              </div>
+              <div class="material-qty">${m.qty} <span style="font-size:12px;color:var(--muted);font-weight:400">${m.unit}</span></div>
+            </div>
+            <div class="lots-detail" data-detail="${m.material_id}"></div>
+          </div>
+        `;
+      }).join('');
+
+      els.list.querySelectorAll('.material-item').forEach(item => {
+        item.addEventListener('click', () => toggleLots(item));
+      });
+    }
+
+    async function toggleLots(itemEl) {
+      const matId = itemEl.getAttribute('data-id');
+      const detail = itemEl.querySelector('.lots-detail');
+
+      if (detail.classList.contains('open')) {
+        detail.classList.remove('open');
+        return;
+      }
+
+      detail.classList.add('open');
+
+      if (lotsCache[matId]) {
+        renderLotsDetail(detail, lotsCache[matId], itemEl);
+        return;
+      }
+
+      detail.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px 0">โหลด lot...</div>';
+
+      try {
+        const r = await api.post('getLotsForMaterial', {
+          lineUserId: state.lineUserId,
+          material_id: matId,
+        });
+        lotsCache[matId] = r.lots || [];
+        renderLotsDetail(detail, lotsCache[matId], itemEl);
+      } catch (err) {
+        detail.innerHTML = '<div class="error" style="display:block">โหลดไม่สำเร็จ: ' + (err.message||err) + '</div>';
+      }
+    }
+
+    function renderLotsDetail(detail, lots, itemEl) {
+      const mat = materials.find(m => m.material_id === itemEl.getAttribute('data-id'));
+      const unit = mat ? mat.unit : '';
+      if (!lots.length) {
+        detail.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px 0">ไม่มี lot คงเหลือ</div>';
+        return;
+      }
+      detail.innerHTML = lots.map(l => `
+        <div class="lot-row">
+          <strong>Lot ${l.lot_no}</strong> — ${l.qty_remaining} ${unit}<br/>
+          <span style="color:var(--muted)">Supplier: ${l.supplier || '-'} · หมดอายุ: ${formatDate(l.expire_date)}</span>
+        </div>
+      `).join('');
+    }
+
+    async function init() {
+      try {
+        await initAuth(CONFIG.LIFF_ID_LIST);
+
+        const me = await api.post('getMe', { lineUserId: state.lineUserId });
+        if (!me.paired) {
+          location.href = `https://liff.line.me/${CONFIG.LIFF_ID_PAIR}`;
+          return;
+        }
+
+        const r = await api.post('listStock', { lineUserId: state.lineUserId });
+        materials = r.materials || [];
+
+        const lowCount = materials.filter(m => m.is_low).length;
+        const expCount = materials.filter(m => m.has_expiring).length;
+        if (lowCount > 0 || expCount > 0) {
+          const parts = [];
+          if (expCount > 0) parts.push(`<strong>${expCount}</strong> รายการใกล้หมดอายุ`);
+          if (lowCount > 0) parts.push(`<strong>${lowCount}</strong> รายการใกล้หมด`);
+          els.summary.innerHTML = parts.join(' · ');
+          els.summary.style.display = 'block';
+        }
+
+        renderList();
+      } catch (err) {
+        els.list.innerHTML = '<div class="error" style="display:block">' + (err.message||err) + '</div>';
+      }
+    }
+
+    els.search.addEventListener('input', renderList);
+
+    init();
+  </script>
+</body>
+</html>

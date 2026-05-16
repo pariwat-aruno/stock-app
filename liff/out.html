@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>เบิกสารออก — Stock App</title>
+  <link rel="stylesheet" href="./css/style.css" />
+  <style>
+    video.cam { width:100%; max-height:320px; background:#000; border-radius:8px; margin-bottom:10px; object-fit:cover; }
+    .photo-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px; }
+    .photo-slot { aspect-ratio:1/1; background:var(--bg); border:2px dashed var(--border); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; overflow:hidden; position:relative; }
+    .photo-slot.filled { border-style:solid; border-color:var(--cherry); }
+    .photo-slot img { width:100%; height:100%; object-fit:cover; }
+    .photo-slot .label { position:absolute; top:4px; left:4px; background:rgba(0,0,0,0.5); color:white; padding:2px 6px; border-radius:4px; font-size:10px; }
+    .btn-camera { width:100%; padding:12px; margin-bottom:12px; background:var(--cherry); color:white; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer; }
+    .btn-camera:disabled { background:var(--muted); cursor:not-allowed; }
+    .progress-info { background:var(--cherry-tint); padding:10px 14px; border-radius:6px; font-size:13px; margin-bottom:12px; text-align:center; color:var(--cherry-dark); font-weight:600; }
+    .lot-card { padding:12px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; cursor:pointer; background:white; transition: all 0.15s; }
+    .lot-card:hover { border-color:var(--cherry); }
+    .lot-card.selected { border-color:var(--cherry); background:var(--cherry-tint); }
+    .lot-card-title { font-weight:600; margin-bottom:4px; }
+    .lot-card-meta { font-size:12px; color:var(--muted); }
+    .lot-card-fifo { display:inline-block; padding:2px 6px; background:var(--cherry); color:white; border-radius:4px; font-size:10px; margin-left:6px; }
+    .lot-card-expired { color:var(--cherry); font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="./img/logo.jpg" alt="logo" onerror="this.style.display='none'" />
+    <div class="brand" id="brand">STOCK APP</div>
+    <h1>เบิกสารออกจากคลัง</h1>
+    <div class="subtitle">บันทึกการเบิกสารออก — บังคับถ่ายรูป 3 ใบ + ระบุผู้ใช้</div>
+
+    <div id="error" class="error" style="display:none"></div>
+
+    <div class="field">
+      <div class="label">สาร</div>
+      <select id="material" disabled>
+        <option value="">กำลังโหลด...</option>
+      </select>
+    </div>
+
+    <!-- Lot picker -->
+    <div id="lot-section" style="display:none">
+      <div class="label">เลือกล็อต (แนะนำใกล้หมดอายุก่อน)</div>
+      <div id="lot-list"></div>
+    </div>
+
+    <div id="form-section" style="display:none">
+      <div class="field">
+        <div class="label">จำนวน <span id="unit-label" style="color:var(--muted);font-weight:400"></span> <span id="qty-max" style="color:var(--muted);font-weight:400"></span></div>
+        <input type="number" id="qty" inputmode="decimal" placeholder="0" min="0" step="0.01" />
+      </div>
+
+      <div class="field">
+        <div class="label">เบิกให้ใคร / สำหรับงานอะไร <span style="color:var(--cherry)">*</span></div>
+        <input type="text" id="for_user_note" placeholder="เช่น RD-สมชาย ใช้สูตร X" />
+      </div>
+
+      <!-- ถ่ายรูป 3 ใบ -->
+      <div class="label" style="margin-top:8px">รูปยืนยัน (บังคับ 3 รูป)</div>
+      <div class="progress-info" id="progress-info">ถ่ายแล้ว 0/3 รูป</div>
+
+      <video id="cam" class="cam" autoplay playsinline style="display:none"></video>
+
+      <button id="btn-start-cam" class="btn-camera">เปิดกล้อง</button>
+      <button id="btn-capture" class="btn-camera" style="display:none">ถ่ายรูปที่ <span id="next-num">1</span></button>
+
+      <div class="photo-grid">
+        <div class="photo-slot" id="slot-1"><span class="label">รูปที่ 1</span><span>ยังไม่ถ่าย</span></div>
+        <div class="photo-slot" id="slot-2"><span class="label">รูปที่ 2</span><span>ยังไม่ถ่าย</span></div>
+        <div class="photo-slot" id="slot-3"><span class="label">รูปที่ 3</span><span>ยังไม่ถ่าย</span></div>
+      </div>
+
+      <button id="btn-submit" class="btn-primary" disabled>บันทึกการเบิกออก</button>
+    </div>
+
+    <button id="btn-cancel" class="btn-secondary" onclick="liff.closeWindow()">ยกเลิก</button>
+  </div>
+
+  <div class="page-footer" id="footer">Stock App</div>
+
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script type="module">
+    import { CONFIG } from './js/config.js';
+    import { api } from './js/api.js';
+    import { initAuth, state } from './js/auth.js';
+    import { startCamera, captureFromVideoWithStamp, stopCamera } from './js/camera.js';
+    import { showError, clearError } from './js/utils.js';
+
+    const els = {
+      brand: document.getElementById('brand'),
+      footer: document.getElementById('footer'),
+      err: document.getElementById('error'),
+      material: document.getElementById('material'),
+      lotSection: document.getElementById('lot-section'),
+      lotList: document.getElementById('lot-list'),
+      formSection: document.getElementById('form-section'),
+      unitLabel: document.getElementById('unit-label'),
+      qtyMax: document.getElementById('qty-max'),
+      qty: document.getElementById('qty'),
+      forUserNote: document.getElementById('for_user_note'),
+      progress: document.getElementById('progress-info'),
+      cam: document.getElementById('cam'),
+      btnStart: document.getElementById('btn-start-cam'),
+      btnCapture: document.getElementById('btn-capture'),
+      nextNum: document.getElementById('next-num'),
+      btnSubmit: document.getElementById('btn-submit'),
+    };
+
+    if (CONFIG.BRAND_NAME) {
+      els.brand.textContent = CONFIG.BRAND_NAME;
+      els.footer.textContent = CONFIG.BRAND_NAME;
+    }
+
+    const images = [null, null, null];
+    let materials = [];
+    let selectedMaterial = null;
+    let selectedLot = null;
+    let lots = [];
+    let camStream = null;
+
+    function updateProgress() {
+      const taken = images.filter(Boolean).length;
+      els.progress.textContent = `ถ่ายแล้ว ${taken}/3 รูป`;
+      els.nextNum.textContent = String(taken + 1);
+      updateSubmit();
+    }
+
+    function updateSubmit() {
+      const taken = images.filter(Boolean).length;
+      const qty = parseFloat(els.qty.value);
+      const ok = selectedMaterial && selectedLot
+        && qty > 0 && qty <= selectedLot.qty_remaining
+        && els.forUserNote.value.trim()
+        && taken === 3;
+      els.btnSubmit.disabled = !ok;
+    }
+
+    function renderPhoto(idx, dataUrl) {
+      const slot = document.getElementById('slot-' + (idx + 1));
+      slot.innerHTML = `<span class="label">รูปที่ ${idx + 1}</span><img src="${dataUrl}" alt="" />`;
+      slot.classList.add('filled');
+    }
+
+    function formatDate(s) {
+      if (!s) return '-';
+      try {
+        const d = new Date(s);
+        return d.toLocaleDateString('th-TH', { day:'2-digit', month:'2-digit', year:'numeric' });
+      } catch (e) { return String(s); }
+    }
+
+    function daysUntilExpire(s) {
+      try {
+        const d = new Date(s);
+        const today = new Date(); today.setHours(0,0,0,0);
+        return Math.floor((d - today) / 86400000);
+      } catch (e) { return Infinity; }
+    }
+
+    function renderLots() {
+      if (!lots.length) {
+        els.lotList.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center">ไม่มีล็อตคงเหลือ</div>';
+        return;
+      }
+      els.lotList.innerHTML = lots.map((l, i) => {
+        const dleft = daysUntilExpire(l.expire_date);
+        const expClass = dleft <= 30 ? 'lot-card-expired' : '';
+        const expMsg = dleft < 0 ? 'หมดอายุแล้ว' : (dleft <= 30 ? `อีก ${dleft} วัน` : '');
+        const fifo = i === 0 ? '<span class="lot-card-fifo">FIFO</span>' : '';
+        return `
+          <div class="lot-card" data-idx="${i}">
+            <div class="lot-card-title">Lot ${l.lot_no} ${fifo}</div>
+            <div class="lot-card-meta">
+              คงเหลือ ${l.qty_remaining} ${selectedMaterial.unit} ·
+              Supplier: ${l.supplier || '-'} ·
+              <span class="${expClass}">หมดอายุ ${formatDate(l.expire_date)} ${expMsg}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      els.lotList.querySelectorAll('.lot-card').forEach(card => {
+        card.addEventListener('click', () => {
+          els.lotList.querySelectorAll('.lot-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          const idx = parseInt(card.getAttribute('data-idx'), 10);
+          selectedLot = lots[idx];
+          els.qtyMax.textContent = `(สูงสุด ${selectedLot.qty_remaining})`;
+          els.qty.max = selectedLot.qty_remaining;
+          els.formSection.style.display = 'block';
+          updateSubmit();
+        });
+      });
+    }
+
+    async function init() {
+      try {
+        await initAuth(CONFIG.LIFF_ID_OUT);
+
+        const me = await api.post('getMe', { lineUserId: state.lineUserId });
+        if (!me.paired) {
+          location.href = `https://liff.line.me/${CONFIG.LIFF_ID_PAIR}`;
+          return;
+        }
+
+        const r = await api.post('listMaterials', { lineUserId: state.lineUserId });
+        materials = r.materials || [];
+        els.material.innerHTML = '<option value="">-- เลือกสาร --</option>' +
+          materials.map(m => `<option value="${m.material_id}">${m.name} (${m.unit})</option>`).join('');
+        els.material.disabled = false;
+      } catch (err) {
+        showError(els.err, 'Error: ' + (err.message || err));
+      }
+    }
+
+    els.material.addEventListener('change', async () => {
+      selectedMaterial = materials.find(m => m.material_id === els.material.value);
+      selectedLot = null;
+      els.formSection.style.display = 'none';
+      els.lotSection.style.display = selectedMaterial ? 'block' : 'none';
+
+      if (!selectedMaterial) return;
+
+      els.unitLabel.textContent = `(${selectedMaterial.unit})`;
+      els.lotList.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center">กำลังโหลด lot...</div>';
+
+      try {
+        const r = await api.post('getLotsForMaterial', {
+          lineUserId: state.lineUserId,
+          material_id: selectedMaterial.material_id,
+        });
+        lots = r.lots || [];
+        renderLots();
+      } catch (err) {
+        showError(els.err, 'โหลด lot ไม่สำเร็จ: ' + (err.message || err));
+      }
+    });
+
+    [els.qty, els.forUserNote].forEach(el => el.addEventListener('input', updateSubmit));
+
+    els.btnStart.addEventListener('click', async () => {
+      if (images.filter(Boolean).length >= 3) {
+        images.fill(null);
+        for (let i = 1; i <= 3; i++) {
+          const s = document.getElementById('slot-' + i);
+          s.innerHTML = `<span class="label">รูปที่ ${i}</span><span>ยังไม่ถ่าย</span>`;
+          s.classList.remove('filled');
+        }
+        updateProgress();
+        els.btnStart.textContent = 'เปิดกล้อง';
+      }
+      try {
+        clearError(els.err);
+        camStream = await startCamera(els.cam, 'environment');
+        els.cam.style.display = 'block';
+        els.btnStart.style.display = 'none';
+        els.btnCapture.style.display = 'block';
+      } catch (err) {
+        showError(els.err, 'เปิดกล้องไม่ได้: ' + (err.message || err));
+      }
+    });
+
+    els.btnCapture.addEventListener('click', () => {
+      try {
+        const idx = images.findIndex(x => !x);
+        if (idx === -1) return;
+        const dataUrl = captureFromVideoWithStamp(els.cam, `รูปที่ ${idx + 1}`);
+        images[idx] = dataUrl;
+        renderPhoto(idx, dataUrl);
+        updateProgress();
+
+        if (images.filter(Boolean).length >= 3) {
+          stopCamera(camStream);
+          camStream = null;
+          els.cam.style.display = 'none';
+          els.btnCapture.style.display = 'none';
+          els.btnStart.style.display = 'block';
+          els.btnStart.textContent = 'เปิดกล้อง (ถ่ายซ่อม)';
+        }
+      } catch (err) {
+        showError(els.err, 'ถ่ายรูปไม่สำเร็จ: ' + (err.message || err));
+      }
+    });
+
+    els.btnSubmit.addEventListener('click', async () => {
+      els.btnSubmit.disabled = true;
+      els.btnSubmit.textContent = 'กำลังอัปโหลด...';
+      clearError(els.err);
+
+      try {
+        const r = await api.post('issueMaterial', {
+          lineUserId: state.lineUserId,
+          material_id: selectedMaterial.material_id,
+          lot_id: selectedLot.lot_id,
+          qty: parseFloat(els.qty.value),
+          for_user_note: els.forUserNote.value.trim(),
+          images: images,
+        });
+        alert(`บันทึกสำเร็จ\nคงเหลือใน lot นี้: ${r.qty_remaining} ${selectedMaterial.unit}`);
+        if (typeof liff !== 'undefined' && liff.closeWindow) liff.closeWindow();
+        else location.reload();
+      } catch (err) {
+        const errMsg = {
+          'not_paired_staff': 'คุณยังไม่ได้รับสิทธิ์ — ติดต่อเจ้าของ',
+          'lot_not_found': 'ไม่พบ lot ที่เลือก',
+          'insufficient_qty': `คงเหลือใน lot ไม่พอ (เหลือ ${err.data?.qty_remaining || '?'})`,
+          'need_3_images': 'ต้องถ่ายครบ 3 รูป',
+          'invalid_qty': 'จำนวนต้องมากกว่า 0',
+          'missing_for_user_note': 'ต้องระบุว่าเบิกให้ใคร',
+        }[err.code] || ('เกิดข้อผิดพลาด: ' + (err.message || err));
+        showError(els.err, errMsg);
+        els.btnSubmit.disabled = false;
+        els.btnSubmit.textContent = 'บันทึกการเบิกออก';
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

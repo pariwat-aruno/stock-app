@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>เสนอสารใหม่ — Stock App</title>
+  <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="./img/logo.jpg" alt="logo" onerror="this.style.display='none'" />
+    <div class="brand" id="brand">STOCK APP</div>
+    <h1>เสนอสารใหม่</h1>
+    <div class="subtitle">เสนอสารวัตถุดิบใหม่ที่ยังไม่มีในระบบ — รออนุมัติจากเจ้าของ</div>
+
+    <div id="error" class="error" style="display:none"></div>
+    <div id="success" class="error" style="display:none;background:#d1fae5;border-color:#10b981;color:#065f46"></div>
+
+    <div class="field">
+      <div class="label">ชื่อสาร <span style="color:var(--cherry)">*</span></div>
+      <input type="text" id="name" placeholder="เช่น Glycerin" />
+    </div>
+
+    <div class="field">
+      <div class="label">หน่วย <span style="color:var(--cherry)">*</span></div>
+      <select id="unit">
+        <option value="">-- เลือกหน่วย --</option>
+        <option value="g">g (กรัม)</option>
+        <option value="kg">kg (กิโลกรัม)</option>
+        <option value="ml">ml (มิลลิลิตร)</option>
+        <option value="l">l (ลิตร)</option>
+        <option value="ชิ้น">ชิ้น</option>
+        <option value="หลอด">หลอด</option>
+        <option value="ขวด">ขวด</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <div class="label">ขั้นต่ำสำหรับ alert (optional)</div>
+      <input type="number" id="min_stock" inputmode="decimal" placeholder="0 = ไม่ตั้ง alert" min="0" step="0.01" />
+    </div>
+
+    <div class="field">
+      <div class="label">หมายเหตุ (optional)</div>
+      <input type="text" id="note" placeholder="เช่น ทดแทน Glycerin เก่า / supplier แนะนำ" />
+    </div>
+
+    <button id="btn-submit" class="btn-primary" disabled>ส่งคำขออนุมัติ</button>
+    <button class="btn-secondary" onclick="liff.closeWindow()">ยกเลิก</button>
+  </div>
+
+  <div class="page-footer" id="footer">Stock App</div>
+
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script type="module">
+    import { CONFIG } from './js/config.js';
+    import { api } from './js/api.js';
+    import { initAuth, state } from './js/auth.js';
+    import { showError, clearError } from './js/utils.js';
+
+    const els = {
+      brand: document.getElementById('brand'),
+      footer: document.getElementById('footer'),
+      err: document.getElementById('error'),
+      success: document.getElementById('success'),
+      name: document.getElementById('name'),
+      unit: document.getElementById('unit'),
+      min_stock: document.getElementById('min_stock'),
+      note: document.getElementById('note'),
+      btn: document.getElementById('btn-submit'),
+    };
+
+    if (CONFIG.BRAND_NAME) {
+      els.brand.textContent = CONFIG.BRAND_NAME;
+      els.footer.textContent = CONFIG.BRAND_NAME;
+    }
+
+    function updateSubmit() {
+      els.btn.disabled = !(els.name.value.trim() && els.unit.value);
+    }
+
+    [els.name, els.unit].forEach(el => el.addEventListener('input', updateSubmit));
+    els.unit.addEventListener('change', updateSubmit);
+
+    async function init() {
+      try {
+        await initAuth(CONFIG.LIFF_ID_PROPOSE);
+        const me = await api.post('getMe', { lineUserId: state.lineUserId });
+        if (!me.paired) {
+          location.href = `https://liff.line.me/${CONFIG.LIFF_ID_PAIR}`;
+          return;
+        }
+      } catch (err) {
+        showError(els.err, 'Error: ' + (err.message || err));
+      }
+    }
+
+    els.btn.addEventListener('click', async () => {
+      els.btn.disabled = true;
+      els.btn.textContent = 'กำลังส่ง...';
+      clearError(els.err);
+
+      try {
+        const r = await api.post('proposeMaterial', {
+          lineUserId: state.lineUserId,
+          name: els.name.value.trim(),
+          unit: els.unit.value,
+          min_stock: parseFloat(els.min_stock.value) || 0,
+          note: els.note.value.trim(),
+        });
+        els.success.textContent = `ส่งคำขออนุมัติเรียบร้อย (${r.pending_id}) — เจ้าของจะตอบกลับเมื่ออนุมัติ`;
+        els.success.style.display = 'block';
+        els.name.value = '';
+        els.unit.value = '';
+        els.min_stock.value = '';
+        els.note.value = '';
+        els.btn.textContent = 'ส่งคำขออนุมัติ';
+        setTimeout(() => {
+          if (typeof liff !== 'undefined' && liff.closeWindow) liff.closeWindow();
+        }, 3000);
+      } catch (err) {
+        const errMsg = {
+          'not_paired_staff': 'คุณยังไม่ได้รับสิทธิ์ — ติดต่อเจ้าของ',
+          'name_duplicate': 'สารนี้มีอยู่ในระบบแล้ว',
+          'pending_duplicate': 'มีคำขอที่ยังไม่อนุมัติของสารชื่อนี้อยู่แล้ว',
+          'missing_name': 'ต้องระบุชื่อสาร',
+          'missing_unit': 'ต้องระบุหน่วย',
+        }[err.code] || ('เกิดข้อผิดพลาด: ' + (err.message || err));
+        showError(els.err, errMsg);
+        els.btn.disabled = false;
+        els.btn.textContent = 'ส่งคำขออนุมัติ';
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>
