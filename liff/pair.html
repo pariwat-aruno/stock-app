@@ -38,6 +38,24 @@
       margin-bottom: 14px;
     }
     .paired-info strong { color: var(--cherry); }
+
+    .userid-details {
+      margin-top: 24px;
+      padding: 12px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .userid-details summary {
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 500;
+      outline: none;
+    }
+    .userid-details[open] summary { margin-bottom: 8px; }
+    .userid-help { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .userid-details .userid-box { margin-bottom: 8px; }
   </style>
 </head>
 <body>
@@ -69,22 +87,21 @@
     <!-- View: not paired -->
     <div id="view-unpaired" style="display:none">
       <h1>เริ่มใช้งาน</h1>
-      <div class="subtitle">ส่ง User ID ให้เจ้าของ → รับรหัส 6 หลักมาใส่</div>
+      <div class="subtitle">ใส่รหัสจับคู่ 6 หลักที่เจ้าของส่งให้คุณ</div>
 
-      <div class="step"><div class="step-num">1</div><div>คัดลอก User ID ส่งให้เจ้าของทาง LINE</div></div>
-      <div class="step"><div class="step-num">2</div><div>รอเจ้าของส่ง "รหัสจับคู่" 6 หลักมาให้</div></div>
-      <div class="step"><div class="step-num">3</div><div>ใส่รหัสด้านล่าง</div></div>
-
-      <div class="label" style="margin-top:18px">User ID ของคุณ</div>
-      <div id="userid" class="userid-box loading">กำลังโหลด...</div>
-      <button id="btn-copy" class="btn-secondary" style="margin-bottom:24px" disabled>คัดลอก User ID</button>
-
-      <div class="label">ใส่รหัสจับคู่ 6 หลัก</div>
+      <div class="label" style="margin-top:18px">รหัสจับคู่</div>
       <input id="code" class="code-input" type="tel" inputmode="numeric" maxlength="6" pattern="\d{6}" placeholder="------" autocomplete="off" />
 
       <div id="error" class="error" style="display:none"></div>
 
       <button id="btn-redeem" class="btn-primary" disabled>ยืนยัน</button>
+
+      <details class="userid-details">
+        <summary>ยังไม่ได้รับรหัส? — ดู User ID ของฉัน</summary>
+        <div class="userid-help">หากเจ้าของต้องการตรวจสอบบัญชี LINE ของคุณ — คัดลอก ID นี้ส่งให้</div>
+        <div id="userid" class="userid-box loading" style="margin-top:8px">กำลังโหลด...</div>
+        <button id="btn-copy" class="btn-secondary" disabled>คัดลอก User ID</button>
+      </details>
     </div>
   </div>
 
