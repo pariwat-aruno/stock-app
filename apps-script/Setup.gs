@@ -243,6 +243,108 @@ function setupAll() {
 }
 
 /**
+ * One-shot bootstrap เจ้าของคนแรก — รันครั้งเดียวตอน setup ระบบ
+ *
+ * อ่านจาก Script Properties:
+ *   BOOTSTRAP_OWNER_USERID = LINE userId ของเจ้าของ (ดูได้จากการพิมพ์ "id" ใน chat กับ bot)
+ *   BOOTSTRAP_OWNER_NAME   = ชื่อเจ้าของ (default: "เจ้าของ")
+ *
+ * จะทำ 3 อย่าง:
+ *   1. Insert row ใน Sheet Employees (EMP-0001, name, owner, active)
+ *   2. Insert row ใน Sheet User_Map (lineUserId ↔ EMP-0001)
+ *   3. Update Sheet Config row owner_line_user_ids = lineUserId
+ *
+ * ตรวจ idempotent — ถ้ารันครั้งที่ 2 จะ skip + return error
+ *
+ * หลังรันสำเร็จ:
+ *   ลบ BOOTSTRAP_OWNER_USERID + BOOTSTRAP_OWNER_NAME จาก Script Properties ทิ้ง
+ */
+function bootstrapOwnerFromProps() {
+  const props = PropertiesService.getScriptProperties();
+  const userId = props.getProperty('BOOTSTRAP_OWNER_USERID');
+  const name = props.getProperty('BOOTSTRAP_OWNER_NAME') || 'เจ้าของ';
+
+  if (!userId) {
+    throw new Error('ยังไม่ตั้ง BOOTSTRAP_OWNER_USERID ใน Script Properties — ใส่ LINE userId ของเจ้าของก่อน');
+  }
+  if (!/^U[a-f0-9]{32}$/i.test(userId)) {
+    throw new Error('BOOTSTRAP_OWNER_USERID format ไม่ถูก — ต้องเป็น U + 32 hex chars');
+  }
+
+  const ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
+  const empSheet = ss.getSheetByName('Employees');
+  const umSheet = ss.getSheetByName('User_Map');
+  const configSheet = ss.getSheetByName('Config');
+
+  if (!empSheet || !umSheet || !configSheet) {
+    throw new Error('Sheet schema ยังไม่ครบ — รัน setupDatabase() ก่อน');
+  }
+
+  // ตรวจ idempotent — ถ้ามี owner อยู่แล้ว skip
+  const empData = empSheet.getDataRange().getValues();
+  const existingOwner = empData.slice(1).find(r => r[2] === 'owner' && r[3] === true);
+  if (existingOwner) {
+    return `เจ้าของมีอยู่แล้ว: ${existingOwner[0]} ${existingOwner[1]} — bootstrap skipped`;
+  }
+
+  // ตรวจว่า userId นี้ paired แล้วยัง
+  const umData = umSheet.getDataRange().getValues();
+  const alreadyPaired = umData.slice(1).find(r => r[0] === userId && r[3] === true);
+  if (alreadyPaired) {
+    throw new Error(`userId นี้ paired กับ ${alreadyPaired[1]} อยู่แล้ว`);
+  }
+
+  const now = formatISOBangkok(new Date());
+
+  // 1. Insert Employees
+  empSheet.appendRow([
+    'EMP-0001',
+    name,
+    'owner',
+    true,
+    now,
+    'bootstrap',
+  ]);
+
+  // 2. Insert User_Map
+  umSheet.appendRow([
+    userId,
+    'EMP-0001',
+    now,
+    true,
+  ]);
+
+  // 3. Update Config row owner_line_user_ids
+  const configData = configSheet.getDataRange().getValues();
+  let configRowIdx = -1;
+  for (let i = 1; i < configData.length; i++) {
+    if (configData[i][0] === 'owner_line_user_ids') {
+      configRowIdx = i;
+      break;
+    }
+  }
+  if (configRowIdx === -1) {
+    configSheet.appendRow(['owner_line_user_ids', userId, 'LINE userId ของเจ้าของ (comma-separated)']);
+  } else {
+    configSheet.getRange(configRowIdx + 1, 2).setValue(userId);
+  }
+
+  // clear cache (เพราะ Config เปลี่ยน)
+  try { clearConfigCache(); } catch (e) {}
+
+  const msg = [
+    `bootstrapOwnerFromProps สำเร็จ`,
+    `  Employees: EMP-0001 · ${name} · owner · active`,
+    `  User_Map: ${userId} ↔ EMP-0001`,
+    `  Config.owner_line_user_ids: ${userId}`,
+    ``,
+    `ขั้นถัดไป: ลบ BOOTSTRAP_OWNER_USERID + BOOTSTRAP_OWNER_NAME จาก Script Properties`,
+  ].join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/**
  * เผื่อเปลี่ยน schema ในอนาคต — migration helper
  * (skeleton — ไม่ implement จริง ตอน schema เปลี่ยนค่อยเขียน)
  */
