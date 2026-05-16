@@ -12,8 +12,8 @@ Layout:
 
 ก่อนใช้:
   1. ใส่ ACCESS_TOKEN ใน env: export LINE_CHANNEL_ACCESS_TOKEN=xxx
-  2. ใส่ LIFF_IDs ใน env: export LIFF_ID_IN=... export LIFF_ID_OUT=... ฯลฯ
-     หรือแก้ใน SECTIONS ด้านล่างก็ได้
+  2. LIFF_IDs อ่านจาก liff/js/config.js อัตโนมัติ
+     (override ได้ด้วย env: export LIFF_ID_IN=... ฯลฯ)
   3. pip install Pillow requests
   4. python3 scripts/setup_rich_menu.py
 
@@ -23,10 +23,28 @@ Layout:
 """
 
 import os
+import re
 import sys
 import json
 import requests
 from PIL import Image, ImageDraw, ImageFont
+
+# ========== Auto-read LIFF IDs from liff/js/config.js ==========
+
+CONFIG_JS = os.path.join(os.path.dirname(__file__), '..', 'liff', 'js', 'config.js')
+
+
+def read_liff_ids_from_config():
+    """อ่าน LIFF_ID_* จาก liff/js/config.js โดย regex"""
+    if not os.path.exists(CONFIG_JS):
+        return {}
+    with open(CONFIG_JS, 'r', encoding='utf-8') as f:
+        content = f.read()
+    pattern = re.compile(r"(LIFF_ID_[A-Z]+)\s*:\s*['\"]([^'\"]+)['\"]")
+    return {m.group(1): m.group(2) for m in pattern.finditer(content)}
+
+
+LIFF_FROM_CONFIG = read_liff_ids_from_config()
 
 # ========== CONFIG ==========
 
@@ -54,18 +72,20 @@ HEADERS = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
 
 
 def resolve_liff_ids():
-    """resolve LIFF IDs จาก env vars — fail ถ้าไม่ครบ"""
+    """resolve LIFF IDs — priority: env var > config.js"""
     resolved = []
     missing = []
     for label, color, env_key in SECTIONS:
-        liff_id = os.environ.get(env_key, '')
+        liff_id = os.environ.get(env_key) or LIFF_FROM_CONFIG.get(env_key, '')
+        if liff_id and liff_id.startswith('REPLACE_'):
+            liff_id = ''
         if not liff_id:
             missing.append(env_key)
         resolved.append((label, color, liff_id))
     if missing:
-        print('error: missing env vars:')
+        print('error: ยังไม่มี LIFF IDs ต่อไปนี้ (ทั้งใน env + config.js):')
         for m in missing:
-            print(f'  export {m}=<liff_id>')
+            print(f'  {m}')
         sys.exit(1)
     return resolved
 
