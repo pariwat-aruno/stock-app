@@ -39,6 +39,18 @@
     .filter-bar select { flex:1; margin-bottom:0; }
     .img-thumbs { display:flex; gap:4px; margin-top:6px; }
     .img-thumbs img { width:48px; height:48px; object-fit:cover; border-radius:4px; }
+
+    /* ===== Invite modal ===== */
+    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center; padding:16px; z-index:100; }
+    .modal-bg.open { display:flex; }
+    .modal { background:white; border-radius:12px; max-width:480px; width:100%; max-height:90vh; overflow:auto; padding:20px; box-shadow:0 4px 12px rgba(0,0,0,0.2); }
+    .modal-title { font-size:18px; font-weight:700; margin:0 0 6px; color:var(--cherry); }
+    .modal-subtitle { font-size:13px; color:var(--muted); margin-bottom:14px; }
+    .code-big { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:36px; letter-spacing:10px; padding:18px; background:var(--cherry-tint); color:var(--cherry-dark); border-radius:10px; text-align:center; font-weight:700; margin-bottom:14px; }
+    .invite-msg { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px 14px; font-size:13px; line-height:1.55; white-space:pre-wrap; word-break:break-word; margin-bottom:12px; max-height:240px; overflow-y:auto; font-family:-apple-system,"Helvetica Neue","Sukhumvit Set","Sarabun",sans-serif; }
+    .modal .btn-row { display:flex; gap:8px; }
+    .modal .btn-row button { flex:1; }
+    .modal-meta { font-size:12px; color:var(--muted); text-align:center; margin-top:6px; }
   </style>
 </head>
 <body>
@@ -128,6 +140,23 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal: invite message for pairing code -->
+  <div id="invite-modal" class="modal-bg">
+    <div class="modal">
+      <div class="modal-title">รหัสจับคู่</div>
+      <div class="modal-subtitle">สำหรับ <strong id="invite-name"></strong></div>
+      <div class="code-big" id="invite-code">------</div>
+      <div class="modal-subtitle" style="margin-bottom:8px">ข้อความที่จะส่งให้พนักงาน</div>
+      <div class="invite-msg" id="invite-msg"></div>
+      <div class="btn-row">
+        <button class="btn-primary" id="btn-copy-msg">คัดลอกข้อความ</button>
+        <button class="btn-primary" id="btn-share-line" style="display:none">ส่งผ่าน LINE</button>
+      </div>
+      <button class="btn-secondary" id="btn-close-modal" style="margin-top:8px">ปิด</button>
+      <div class="modal-meta" id="invite-expire"></div>
     </div>
   </div>
 
@@ -260,11 +289,90 @@
     async function issueCode(empCode) {
       try {
         const r = await api.post('issuePairingCode', { lineUserId: state.lineUserId, emp_code: empCode });
-        alert(`รหัสจับคู่สำหรับ ${r.emp_name}:\n\n${r.code}\n\nหมดอายุใน ${r.expires_in_hours} ชม.\nส่งให้พนักงานทาง LINE`);
+        showInviteModal(r);
         loadEmployees();
       } catch (err) {
         alert('Error: ' + (err.message || err));
       }
+    }
+
+    function buildInviteMessage(r) {
+      const brand = CONFIG.BRAND_NAME || 'ระบบคลังวัตถุดิบ';
+      const pairUrl = `https://liff.line.me/${CONFIG.LIFF_ID_PAIR}`;
+      return (
+`สวัสดี คุณ${r.emp_name}
+
+คุณได้รับเชิญเข้าใช้งานระบบคลังวัตถุดิบ
+${brand}
+
+วิธีเข้าใช้งาน:
+1. แอด LINE bot นี้เป็นเพื่อน (ถ้ายังไม่ได้แอด)
+2. กดลิงก์: ${pairUrl}
+3. ใส่รหัสจับคู่ 6 หลักด้านล่าง
+
+รหัสจับคู่: ${r.code}
+
+หมดอายุภายใน ${r.expires_in_hours} ชั่วโมง
+ใส่ผิด 5 ครั้งรหัสถูกยกเลิก ขอใหม่จากเจ้าของได้`
+      );
+    }
+
+    function showInviteModal(r) {
+      const modal = document.getElementById('invite-modal');
+      const nameEl = document.getElementById('invite-name');
+      const codeEl = document.getElementById('invite-code');
+      const msgEl  = document.getElementById('invite-msg');
+      const expireEl = document.getElementById('invite-expire');
+      const btnCopy = document.getElementById('btn-copy-msg');
+      const btnShare = document.getElementById('btn-share-line');
+      const btnClose = document.getElementById('btn-close-modal');
+
+      const msg = buildInviteMessage(r);
+      nameEl.textContent = r.emp_name;
+      codeEl.textContent = r.code;
+      msgEl.textContent = msg;
+      expireEl.textContent = `รหัสหมดอายุใน ${r.expires_in_hours} ชม.`;
+      modal.classList.add('open');
+
+      // share via LINE — ใช้ได้ถ้า LIFF SDK โหลด + shareTargetPicker available
+      const canShare = typeof liff !== 'undefined'
+        && typeof liff.isApiAvailable === 'function'
+        && liff.isApiAvailable('shareTargetPicker');
+      btnShare.style.display = canShare ? '' : 'none';
+
+      btnCopy.onclick = async () => {
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(msg);
+          } else {
+            const ta = document.createElement('textarea');
+            ta.value = msg; document.body.appendChild(ta);
+            ta.select(); document.execCommand('copy');
+            document.body.removeChild(ta);
+          }
+          btnCopy.textContent = 'คัดลอกแล้ว';
+          setTimeout(() => { btnCopy.textContent = 'คัดลอกข้อความ'; }, 2000);
+        } catch (e) {
+          alert('คัดลอกไม่สำเร็จ — กดค้างที่ข้อความเพื่อ copy เอง');
+        }
+      };
+
+      btnShare.onclick = async () => {
+        try {
+          const result = await liff.shareTargetPicker([{ type: 'text', text: msg }]);
+          if (result) {
+            btnShare.textContent = 'ส่งแล้ว';
+            setTimeout(() => { btnShare.textContent = 'ส่งผ่าน LINE'; }, 2000);
+          }
+        } catch (e) {
+          alert('ส่งไม่สำเร็จ: ' + (e.message || e));
+        }
+      };
+
+      btnClose.onclick = () => modal.classList.remove('open');
+
+      // คลิกพื้นหลังก็ปิด
+      modal.onclick = (e) => { if (e.target === modal) modal.classList.remove('open'); };
     }
 
     // ========== Tab: Pending ==========
