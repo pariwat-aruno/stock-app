@@ -12,7 +12,7 @@
 
 export const CONFIG = {
   // === Apps Script Web App URL ===
-  API_URL: 'REPLACE_ME_AFTER_DEPLOY',
+  API_URL: 'https://script.google.com/macros/s/AKfycbyzNgnuHgPFLnXtKX-9BSfExOqW5Mi0_JDbFPdNddDyxNyGI9xvRN0Ab19IIq-5nzkiyA/exec',
 
   // === LIFF App IDs (7 ตัว) ===
   LIFF_ID_PAIR:    '2010103289-x8xGsCA0',
